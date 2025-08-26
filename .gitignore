@@ -55,9 +55,9 @@ trace/
 *.trace.zip
 session.har
 
-# ---- Project outputs ----
+# ---- XSSentinel outputs ----
 results/
-xssprobe_out/
+xssentinel_out/
 **/evidences/
 results/templates/
 

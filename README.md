@@ -32,14 +32,14 @@ pip install -r requirements.txt
 python -m playwright install
 ```
 
-> **Note:** the package folder is currently `xssprobe` (backward-compatible). CLI examples below use that module path.
+> **Note:** the package folder is currently `xssentinel` (backward-compatible). CLI examples below use that module path.
 
 ---
 
 ## ▶️ Usage
 
 ```bash
-python -m xssprobe.cli.main   --url https://authorized-target.tld/app?foo=bar   --headless   --csp-aware   --fuzz-url --max-params 8 --backoff-ms 500   --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"   --ua-rotate per-request   --warmup-requests 2 --warmup-wait-ms 800   --pacing-ms 220 --jitter-pct 0.35   --max-payloads 300   --trace-on-hit   --severity-policy owasp   --export-pdf   --seed 1337   --out ./results
+python -m xssentinel.cli.main   --url https://authorized-target.tld/app?foo=bar   --headless   --csp-aware   --fuzz-url --max-params 8 --backoff-ms 500   --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"   --ua-rotate per-request   --warmup-requests 2 --warmup-wait-ms 800   --pacing-ms 220 --jitter-pct 0.35   --max-payloads 300   --trace-on-hit   --severity-policy owasp   --export-pdf   --seed 1337   --out ./results
 ```
 
 **Key flags**
@@ -85,7 +85,7 @@ python -m xssprobe.cli.main   --url https://authorized-target.tld/app?foo=bar   
 ## 📦 Project layout
 
 ```
-xssprobe/
+xssentinel/
   cli/main.py                # CLI (flow, scoring, exports)
   crawler/browser_engine.py  # Playwright, fuzzing, trace/HAR, stealth
   detector/sandbox_executor.py  # init script, sink hooks, exec signal
