@@ -1,152 +1,168 @@
-import argparse, asyncio, json, os
+# SPDX-License-Identifier: MIT
+# -*- coding: utf-8 -*-
+"""
+XSSentinel CLI — terminal-first output (table/json/ndjson/summary), no PDF.
+Supports external wordlists via --wordlist (extend/replace).
+All code/comments in English.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import random
+import string
 from pathlib import Path
-from rich import print as rprint
-from rich.table import Table
-from rich.console import Console
+from typing import Dict, List, Optional
+
 from ..crawler.browser_engine import BrowserEngine
-from ..reports import reporter
-from ..reports.scoring import score_hit, summarize
-from ..reports.reporter import save_pdf_summary
+from ..payloads.mutator import build_payloads
+from ..reports.reporter import render_table
 
-def parse_args():
-    p = argparse.ArgumentParser(description='XSSentinel - XSS scanner (prototype)')
-    p.add_argument('--url', required=True, help='Target URL')
-    p.add_argument('--headless', dest='headless', action='store_true', help='Run in headless mode (default)')
-    p.add_argument('--no-headless', dest='headless', action='store_false', help='Show the browser')
-    p.set_defaults(headless=True)
-    p.add_argument('--timeout', type=int, default=15000, help='Timeout per operation (ms)')
-    p.add_argument('--auth-cookies', type=str, default=None, help='Path to JSON cookies file')
-    p.add_argument('--max-forms', type=int, default=10, help='Max number of forms to fuzz on the page')
-    p.add_argument('--out', type=str, default='./xssentinel_out', help='Output directory')
-    # Stealth / control
-    p.add_argument('--user-agent', type=str, default=None, help='Custom User-Agent (stealth)')
-    p.add_argument('--pacing-ms', type=int, default=0, help='Base delay between payloads (ms) to reduce WAF noise')
-    p.add_argument('--jitter-pct', type=float, default=0.0, help='Random jitter fraction for pacing (e.g., 0.3 = ±30%)')
-    p.add_argument('--ua-rotate', type=str, default=None, choices=['session','per-request'], help='Rotate User-Agents (session = once, per-request = each request)')
-    p.add_argument('--warmup-requests', type=int, default=0, help='Number of warm-up navigations before fuzzing')
-    p.add_argument('--warmup-wait-ms', type=int, default=500, help='Delay between warm-up navigations (ms)')
-    p.add_argument('--max-payloads', type=int, default=0, help='Max payloads per field/param (0 = unlimited)')
-    p.add_argument('--seed', type=int, default=None, help='Random seed for reproducibility')
-    # Features
-    p.add_argument('--csp-aware', action='store_true', help='Adapt payload selection to observed CSP (avoid inline when blocked)')
-    p.add_argument('--fuzz-url', action='store_true', help='Enable URL parameter fuzzing (in addition to forms)')
-    p.add_argument('--max-params', type=int, default=8, help='Max number of URL params to fuzz')
-    p.add_argument('--backoff-ms', type=int, default=500, help='Initial backoff (ms) for 403/429 during URL fuzzing')
-    p.add_argument('--trace-on-hit', action='store_true', help='Export a Playwright trace ZIP per hit')
-    p.add_argument('--severity-policy', type=str, default='default', choices=['default','owasp','cvss'], help='Severity policy mapping')
-    p.add_argument('--export-pdf', action='store_true', help='Export minimalist Executive Summary PDF')
-    return p.parse_args()
 
-async def run():
-    args = parse_args()
-    if args.seed is not None:
-        import random
-        random.seed(args.seed)
+def _rand_marker(n: int = 6) -> str:
+    return "".join(random.choice(string.hexdigits.lower()) for _ in range(n))
 
-    outdir = Path(args.out)
-    evid_dir = outdir / 'evidences'
-    templates_src = Path(__file__).resolve().parent.parent / 'reports' / 'templates'
-    templates_dst = outdir / 'templates'
-    templates_dst.mkdir(parents=True, exist_ok=True)
-    # Copy the HTML template for standalone editing
-    for name in os.listdir(templates_src):
-        src = templates_src / name
-        dst = templates_dst / name
-        if src.is_file():
-            dst.write_text(src.read_text(encoding='utf-8'), encoding='utf-8')
 
-    marker = os.environ.get('XSSPROBE_MARKER') or os.urandom(4).hex()
-    results = []
+def _print_stdout(findings: List[Dict], mode: str = "table") -> None:
+    if mode == "json":
+        print(json.dumps({"findings": findings}, ensure_ascii=False, indent=2))
+    elif mode == "ndjson":
+        for f in findings:
+            print(json.dumps(f, ensure_ascii=False))
+    elif mode == "summary":
+        total = len(findings)
+        execs = sum(1 for f in findings if f.get("executed"))
+        refls = sum(1 for f in findings if f.get("reflected"))
+        print(f"Total: {total}  |  Executed: {execs}  |  Reflected: {refls}")
+    else:  # table (default)
+        print(render_table(findings))
 
-    async with BrowserEngine(headless=args.headless,
-                             timeout_ms=args.timeout,
-                             evidence_dir=evid_dir,
-                             user_agent=args.user_agent,
-                             pacing_ms=args.pacing_ms,
-                             jitter_pct=args.jitter_pct,
-                             ua_mode=(args.ua_rotate or 'session'),
-                             trace_on_hit=args.trace_on_hit,
-                             outdir=outdir,
-                             warmup_requests=args.warmup_requests,
-                             warmup_wait_ms=args.warmup_wait_ms) as be:
-        cookies = None
-        if args.auth_cookies and Path(args.auth_cookies).exists():
-            try:
-                cookies = json.loads(Path(args.auth_cookies).read_text(encoding='utf-8'))
-                await be.set_cookies(cookies, args.url)
-            except Exception as e:
-                rprint(f'[yellow]Warning[/yellow]: failed to load cookies: {e}')
 
-        rprint(f'[cyan]Target[/cyan]: {args.url}  [dim]marker={marker}[/dim]')
+async def run(args: argparse.Namespace) -> int:
+    outdir = Path(args.out).resolve()
+    outdir.mkdir(parents=True, exist_ok=True)
 
-        # Navigate once to capture CSP and perform warmup
-        await be.navigate(args.url)
-        csp_info = be.get_csp_info() if args.csp_aware else None
+    marker = args.marker or _rand_marker(6)
+    print(f"Target: {args.url}    marker={marker}")
 
-        from ..payloads.mutator import mutate as mutate_func
-        # Initial sink hints (empty); will be updated after first batch if needed
-        sink_hints = []
-        payloads = mutate_func(marker, csp_info=csp_info, sink_hints=sink_hints)
+    async with BrowserEngine(
+        headless=args.headless,
+        timeout_ms=args.timeout_ms,
+        evidence_dir=outdir / "evidences",
+        user_agent=args.user_agent,
+        pacing_ms=args.pacing_ms,
+        jitter_pct=args.jitter_pct,
+        ua_mode=args.ua_rotate,
+        trace_on_hit=args.trace_on_hit,
+        outdir=outdir,
+        warmup_requests=args.warmup_requests,
+        warmup_wait_ms=args.warmup_wait_ms,
+    ) as eng:
 
-        if args.max_payloads and len(payloads) > args.max_payloads:
-            from random import sample
-            payloads = sample(payloads, args.max_payloads)
+        # Build payloads (CSP-aware + external wordlists)
+        # First navigate once to capture CSP if requested
+        if args.csp_aware:
+            await eng.navigate(args.url)
 
-        # Fuzz forms
-        res_forms = await be.fuzz_forms(args.url, marker, payloads, max_forms=args.max_forms)
-        results.extend(res_forms)
+        payloads = await build_payloads(
+            csp=eng.get_csp_info() if args.csp_aware else None,
+            marker=marker,
+            sink_hints=[],  # can be filled after first pass if you loop
+            external_paths=args.wordlist or [],
+            mode=args.wordlist_mode,
+            max_payloads=args.max_payloads,
+            seed=args.seed,
+        )
 
-        # Optional URL fuzzing
+        findings: List[Dict] = []
+
+        # URL param fuzzing (preserve query + fragment fallback)
         if args.fuzz_url:
-            res_url = await be.fuzz_url_params(args.url, marker, payloads, max_params=args.max_params, backoff_ms=args.backoff_ms)
-            results.extend(res_url)
+            fz = await eng.fuzz_url_params(
+                base_url=args.url,
+                marker=marker,
+                payloads=payloads,
+                max_params=args.max_params,
+                backoff_ms=args.backoff_ms,
+            )
+            findings.extend(fz)
 
-        # Quick second pass prioritized by observed sinks (if any)
-        try:
-            sink_names = set()
-            for r in results:
-                for s in (r.get('sinks') or []):
-                    nm = (s.get('name') or '')
-                    if nm:
-                        sink_names.add(nm)
-            sink_hints = sorted(sink_names)[:6]
-            if sink_hints:
-                rprint(f"[dim]Sink hints: {', '.join(sink_hints)}[/dim]")
-                payloads2 = mutate_func(marker, csp_info=csp_info, sink_hints=list(sink_hints))
-                if args.max_payloads and len(payloads2) > args.max_payloads:
-                    from random import sample
-                    payloads2 = sample(payloads2, args.max_payloads)
-                res_forms2 = await be.fuzz_forms(args.url, marker, payloads2, max_forms=max(3, args.max_forms//2))
-                results.extend(res_forms2)
-        except Exception as e:
-            rprint(f"[yellow]Hint pass skipped[/yellow]: {e}")
+        # Form fuzzing
+        if args.fuzz_forms:
+            ff = await eng.fuzz_forms(
+                url=args.url,
+                marker=marker,
+                payloads=payloads,
+                max_forms=args.max_forms,
+            )
+            findings.extend(ff)
 
-    # Scoring and summary
-    results = [score_hit(r, policy=args.severity_policy) for r in results]
-    summary = summarize([r for r in results if r.get('executed') or r.get('reflected')])
+        # Always write a JSON (artefato útil em CI), mas nada de PDF/HTML aqui
+        (outdir / "report.json").write_text(
+            json.dumps({"findings": findings}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
-    # Save reports
-    reporter.save_json(results, outdir, summary=summary)
-    reporter.save_html(results, outdir, summary=summary)
-    if args.export_pdf:
-        save_pdf_summary(summary, outdir)
+        # Print to terminal
+        _print_stdout(findings, args.stdout)
 
-    # Terminal summary
-    hits = [r for r in results if r.get('executed') or r.get('reflected')]
-    table = Table(title='Summary')
-    table.add_column('Severity')
-    table.add_column('Score')
-    table.add_column('URL')
-    table.add_column('Field/Param')
-    table.add_column('Signals')
-    for h in hits[:50]:
-        sig = []
-        if h.get('executed'): sig.append('executed')
-        if h.get('reflected'): sig.append('reflected')
-        table.add_row(h.get('severity',''), str(h.get('score','')), h.get('url',''), h.get('field') or h.get('param',''), ','.join(sig))
-    console = Console()
-    console.print(table)
-    rprint(f'🏁 Reports saved at: [bold]{outdir}[/bold]')
+    return 0
 
-if __name__ == '__main__':
-    asyncio.run(run())
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="XSSentinel — Playwright-powered XSS scanner (terminal-first).")
+
+    # Target
+    p.add_argument("--url", required=True, help="Target URL (authorized scope).")
+    p.add_argument("--headless", action="store_true", default=True, help="Run headless (default).")
+    p.add_argument("--timeout-ms", type=int, default=15000)
+    p.add_argument("--out", default="./results", help="Output directory for evidences/trace/HAR/report.json")
+    p.add_argument("--seed", type=int, default=1337)
+    p.add_argument("--marker", default=None, help="Custom marker value to detect reflections/exec.")
+
+    # CSP-aware
+    p.add_argument("--csp-aware", action="store_true", help="Capture CSP and adapt payload selection.")
+
+    # Fuzzing
+    p.add_argument("--fuzz-url", action="store_true", help="Fuzz URL parameters (preserve query + fragment fallback).")
+    p.add_argument("--max-params", type=int, default=8)
+    p.add_argument("--backoff-ms", type=int, default=500)
+
+    p.add_argument("--fuzz-forms", action="store_true", help="Fuzz HTML forms (named inputs).")
+    p.add_argument("--max-forms", type=int, default=10)
+
+    # WAF tuning
+    p.add_argument("--user-agent", default=None)
+    p.add_argument("--ua-rotate", default="session", choices=["session", "per-request"])
+    p.add_argument("--warmup-requests", type=int, default=0)
+    p.add_argument("--warmup-wait-ms", type=int, default=800)
+    p.add_argument("--pacing-ms", type=int, default=0)
+    p.add_argument("--jitter-pct", type=float, default=0.0)
+
+    # Evidence
+    p.add_argument("--trace-on-hit", action="store_true", help="Export a Playwright trace ZIP per hit.")
+
+    # Wordlists externas
+    p.add_argument("--wordlist", action="append", help="External wordlist file (can be repeated).")
+    p.add_argument("--wordlist-mode", choices=["extend", "replace"], default="extend",
+                   help="How to use external payloads: extend built-ins (default) or replace them.")
+
+    # Terminal output
+    p.add_argument("--stdout", choices=["table", "json", "ndjson", "summary"], default="table",
+                   help="How to print results to the terminal.")
+
+    return p
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    # Ensure deterministic transforms if seed given
+    random.seed(args.seed)
+    exit(asyncio.run(run(args)))
+
+
+if __name__ == "__main__":
+    main()
