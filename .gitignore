@@ -1,0 +1,79 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.python-version
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.nox/
+.tox/
+
+# Packaging / build
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+wheels/
+share/python-wheels/
+*.egg-info/
+*.egg
+MANIFEST
+pip-wheel-metadata/
+
+# Tests / coverage / caches
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+.nosetests.xml
+coverage.xml
+*.cover
+.pytype/
+.mypy_cache/
+
+# IDE / editors
+.idea/
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# ---- Playwright & tracing ----
+playwright-report/
+test-results/
+traces/
+trace/
+*.trace.zip
+session.har
+
+# ---- XSSentinel outputs ----
+results/
+xssentinel_out/
+**/evidences/
+results/templates/
+
+# ---- Logs ----
+*.log
+logs/
+log/
+
+# ---- Secrets / local config ----
+.env
+*.env
+*.env.*
+auth.json
+cookies.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx

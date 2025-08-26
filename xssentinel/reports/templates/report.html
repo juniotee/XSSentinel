@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <title>XSSentinel Report</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 32px; }
+    h1 { margin-top: 0; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+    .tag { display: inline-block; padding: 2px 6px; border-radius: 4px; background: #eef; margin-right: 4px; font-size: 12px; }
+    code { background: #f7f7f7; padding: 2px 4px; border-radius: 3px; }
+    .hit { background: #fffbf2; }
+  </style>
+</head>
+<body>
+  <h1>Relatório XSSentinel</h1>
+  <p>Gerado em: {{ generated }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th>Form/Field</th>
+        <th>Payload</th>
+        <th>Signals</th>
+        <th>Evidência</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in results %}
+      <tr class="{{ 'hit' if r.get('executed') or r.get('reflected') }}">
+        <td>{{ r.get('url') }}</td>
+        <td>#{{ r.get('form_index') }} / <code>{{ r.get('field') }}</code></td>
+        <td><code>{{ r.get('payload') }}</code></td>
+        <td>
+          {% if r.get('executed') %}<span class="tag">executed</span>{% endif %}
+          {% if r.get('reflected') %}<span class="tag">reflected</span>{% endif %}
+          {% if r.get('error') %}<span class="tag">error</span> {{ r.get('error') }}{% endif %}
+        </td>
+        <td>
+          {% if r.get('screenshot') %}
+            <a href="{{ r.get('screenshot') }}" target="_blank">screenshot</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

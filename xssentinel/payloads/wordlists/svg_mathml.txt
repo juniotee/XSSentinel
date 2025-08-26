@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" onload={JSCMD}></svg>
+<svg><a><animate onbegin={JSCMD} attributeName=x dur=1s></animate></a></svg>
+<svg><foreignObject><script>{JSCMD}</script></foreignObject></svg>
+<math><mtext></mtext><script>{JSCMD}</script></math>

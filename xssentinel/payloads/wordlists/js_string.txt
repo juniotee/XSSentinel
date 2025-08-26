@@ -1,0 +1,11 @@
+';{JSCMD}//
+";{JSCMD}//
+');{JSCMD}//
+");{JSCMD}//
+\');{JSCMD}//
+\");{JSCMD}//
+`);${JSCMD}//
+`-eval-`;{JSCMD}//
+</script><script>{JSCMD}</script>
+\\x3cscript\\x3e{JSCMD}\\x3c/script\\x3e
+\u003cscript\u003e{JSCMD}\u003c/script\u003e

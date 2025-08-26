@@ -1,0 +1,6 @@
+XSSPROBE_MARKER
+"><img src=x onerror=document.title='xssentinel-XSSPROBE_MARKER'>
+"><svg/onload=document.title='xssentinel-XSSPROBE_MARKER'>
+"><script>document.title='xssentinel-XSSPROBE_MARKER'</script>
+javascript:document.title='xssentinel-XSSPROBE_MARKER'
+"><iframe srcdoc="<script>document.title='xssentinel-XSSPROBE_MARKER'</script>">

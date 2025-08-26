@@ -1,0 +1,7 @@
+onerror={JSCMD}
+onload={JSCMD}
+onfocus={JSCMD}
+onmouseover={JSCMD}
+onclick={JSCMD}
+onanimationstart={JSCMD}
+ontransitionend={JSCMD}
